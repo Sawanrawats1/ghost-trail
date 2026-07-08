@@ -48,4 +48,41 @@ router.put('/:id/confirm', async (req, res) => {
   }
 });
 
+// POST add comment + auto NLP analysis
+router.post('/:id/comments', async (req, res) => {
+  try {
+    const { text, author } = req.body;
+    if (!text) return res.status(400).json({ error: 'Comment text required' });
+
+    // Call NLP service
+    const nlpResponse = await fetch('http://127.0.0.1:5001/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ comment: text })
+    });
+    const nlpResult = await nlpResponse.json();
+
+    // Build comment object
+    const comment = {
+      text,
+      author: author || 'Anonymous',
+      date: new Date(),
+      nlpRisk: nlpResult.risk,
+      nlpConfidence: nlpResult.confidence,
+      hazardKeywords: nlpResult.hazard_keywords_found
+    };
+
+    // Add comment to trail
+    const trail = await Trail.findByIdAndUpdate(
+      req.params.id,
+      { $push: { comments: comment } },
+      { new: true }
+    );
+
+    res.json({ comment, nlpResult, trail });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

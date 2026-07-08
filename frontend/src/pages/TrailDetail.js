@@ -1,6 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
+import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
+import 'leaflet/dist/leaflet.css';
+import L from 'leaflet';
+
+delete L.Icon.Default.prototype._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
+});
 
 function TrailDetail() {
   const { id } = useParams();
@@ -33,7 +43,6 @@ function TrailDetail() {
       );
       setCommentResult(res.data.nlpResult);
       setComment('');
-      // Refresh trail to show new comment
       const updated = await axios.get(`http://localhost:5000/api/trails/${id}`);
       setTrail(updated.data);
     } catch (err) { console.log(err); }
@@ -41,7 +50,7 @@ function TrailDetail() {
   };
 
   const getFreshness = (date) => {
-    const days = Math.floor((new Date() - new Date(date)) / (1000*60*60*24));
+    const days = Math.floor((new Date() - new Date(date)) / (1000 * 60 * 60 * 24));
     if (days > 180) return { label: '⚠ Needs review — path may have changed', color: '#A32D2D', bg: '#FCEBEB' };
     if (days > 90) return { label: '⚡ May have changed — confirm if you visit', color: '#BA7517', bg: '#FAEEDA' };
     return { label: '✓ Fresh — recently confirmed', color: '#27500A', bg: '#EAF3DE' };
@@ -51,6 +60,7 @@ function TrailDetail() {
   if (!trail) return <div style={styles.loading}>Trail not found.</div>;
 
   const freshness = getFreshness(trail.lastConfirmedDate);
+  const firstWpWithCoords = trail.waypoints?.find(wp => wp.lat && wp.lng);
 
   return (
     <div style={styles.page}>
@@ -76,6 +86,31 @@ function TrailDetail() {
           </span>
         </div>
 
+        {firstWpWithCoords && (
+          <div style={styles.card}>
+            <div style={styles.cardTitle}>🗺 Trail location map</div>
+            <MapContainer
+              center={[firstWpWithCoords.lat, firstWpWithCoords.lng]}
+              zoom={13}
+              style={{ height: '220px', borderRadius: '8px' }}
+            >
+              <TileLayer
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                attribution='&copy; OpenStreetMap contributors'
+              />
+              {trail.waypoints.map((wp, i) =>
+                wp.lat && wp.lng ? (
+                  <Marker key={i} position={[wp.lat, wp.lng]}>
+                    <Popup>
+                      <strong>{wp.title}</strong><br />{wp.description}
+                    </Popup>
+                  </Marker>
+                ) : null
+              )}
+            </MapContainer>
+          </div>
+        )}
+
         {trail.story && (
           <div style={styles.card}>
             <div style={styles.cardTitle}>📖 Story</div>
@@ -85,7 +120,7 @@ function TrailDetail() {
 
         <div style={styles.card}>
           <div style={styles.cardTitle}>🧭 Trail path — follow these steps</div>
-          {trail.waypoints?.sort((a,b) => a.order - b.order).map((wp, i) => (
+          {trail.waypoints?.sort((a, b) => a.order - b.order).map((wp, i) => (
             <div key={i} style={styles.wpRow}>
               <div style={styles.wpNum}>{i === 0 ? 'S' : wp.order}</div>
               <div style={styles.wpBody}>
@@ -109,7 +144,9 @@ function TrailDetail() {
             Last confirmed: {new Date(trail.lastConfirmedDate).toLocaleDateString()}
           </p>
           {confirmed ? (
-            <div style={{ color: '#27500A', fontWeight: '600' }}>✓ Thank you for confirming this trail is still accurate!</div>
+            <div style={{ color: '#27500A', fontWeight: '600' }}>
+              ✓ Thank you for confirming this trail is still accurate!
+            </div>
           ) : (
             <button style={styles.confirmBtn} onClick={confirmFresh}>
               ✓ I visited — trail is still accurate
@@ -131,37 +168,38 @@ function TrailDetail() {
 
           {commentResult && (
             <div style={{
-              marginTop: '12px', padding: '12px', borderRadius: '8px',
+              marginTop: '12px', padding: '12px', borderRadius: '8px', fontSize: '13px',
               background: commentResult.risk === 'needs_review' ? '#FCEBEB' :
                           commentResult.risk === 'caution' ? '#FAEEDA' : '#EAF3DE',
               color: commentResult.risk === 'needs_review' ? '#A32D2D' :
-                     commentResult.risk === 'caution' ? '#854F0B' : '#27500A',
-              fontSize: '13px'
+                     commentResult.risk === 'caution' ? '#854F0B' : '#27500A'
             }}>
               <strong>🤖 NLP Analysis:</strong> {commentResult.risk.replace('_', ' ')}
               {' '}(confidence: {Math.round(commentResult.confidence * 100)}%)
-              {commentResult.hazard_keywords_found?.length > 0 &&
-                <div style={{marginTop: '4px'}}>
+              {commentResult.hazard_keywords_found?.length > 0 && (
+                <div style={{ marginTop: '4px' }}>
                   ⚠ Hazard words detected: <strong>{commentResult.hazard_keywords_found.join(', ')}</strong>
                 </div>
-              }
+              )}
             </div>
           )}
 
           {trail.comments?.length > 0 && (
-            <div style={{marginTop: '14px'}}>
-              <div style={{fontSize: '13px', fontWeight: '500', marginBottom: '8px', color: '#1A1A1A'}}>
+            <div style={{ marginTop: '14px' }}>
+              <div style={{ fontSize: '13px', fontWeight: '500', marginBottom: '8px', color: '#1A1A1A' }}>
                 Previous comments ({trail.comments.length}):
               </div>
               {trail.comments.slice().reverse().map((c, i) => (
-                <div key={i} style={{padding: '8px 0', borderBottom: '1px solid #F0F0F0'}}>
-                  <div style={{fontSize: '13px', color: '#1A1A1A'}}>{c.text}</div>
-                  <div style={{color: '#999', fontSize: '11px', marginTop: '3px', display: 'flex', gap: '8px'}}>
+                <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid #F0F0F0' }}>
+                  <div style={{ fontSize: '13px', color: '#1A1A1A' }}>{c.text}</div>
+                  <div style={{ color: '#999', fontSize: '11px', marginTop: '3px', display: 'flex', gap: '8px' }}>
                     <span>{c.author}</span>
                     <span>{new Date(c.date).toLocaleDateString()}</span>
-                    <span style={{color: c.nlpRisk === 'needs_review' ? '#A32D2D' :
-                                        c.nlpRisk === 'caution' ? '#BA7517' : '#27500A',
-                                  fontWeight: '500'}}>
+                    <span style={{
+                      color: c.nlpRisk === 'needs_review' ? '#A32D2D' :
+                             c.nlpRisk === 'caution' ? '#BA7517' : '#27500A',
+                      fontWeight: '500'
+                    }}>
                       {c.nlpRisk?.replace('_', ' ')}
                     </span>
                   </div>
