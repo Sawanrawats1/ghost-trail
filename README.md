@@ -49,3 +49,98 @@ Ghost Trail captures and structures this informal knowledge:
 ---
 
 ## Project Structure
+
+---
+
+## NLP Component
+
+The trail freshness signal uses a two-layer approach:
+
+**Layer 1 — Date-based decay:**
+- Fresh: confirmed within 90 days
+- Caution: 90–180 days since last confirmation
+- Needs review: 180+ days
+
+**Layer 2 — NLP comment analysis:**
+When a visitor submits a comment, the backend calls the Python NLP microservice at `POST /analyze`. The classifier checks for hazard keywords (overgrown, washed out, landslide, flooded, blocked, etc.) and returns:
+- Risk label: `clear` / `caution` / `needs_review`
+- Confidence score (0–1)
+- List of hazard keywords detected
+
+A comment flagged as `needs_review` immediately escalates the trail's freshness status, regardless of the date threshold.
+
+---
+
+## API Endpoints
+
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/trails` | Get all trails |
+| GET | `/api/trails/:id` | Get single trail |
+| POST | `/api/trails` | Create new trail |
+| PUT | `/api/trails/:id/confirm` | Reset freshness date |
+| POST | `/api/trails/:id/comments` | Add comment + auto NLP analysis |
+
+---
+
+## Setup Instructions
+
+### Prerequisites
+- Node.js v18+
+- Python 3.10+
+- MongoDB Atlas account (free tier)
+
+### 1. Clone the repo
+```bash
+git clone https://github.com/Sawanrawats1/ghost-trail.git
+cd ghost-trail
+```
+
+### 2. Backend setup
+```bash
+cd backend
+npm install
+```
+Create `.env` file:
+
+```bash
+node server.js
+```
+
+### 3. Frontend setup
+```bash
+cd frontend
+npm install
+npm start
+```
+
+### 4. NLP microservice setup
+```bash
+cd nlp
+pip install flask flask-cors
+python freshness.py
+```
+
+### Running all three together
+- Backend: `localhost:5000`
+- Frontend: `localhost:3000`
+- NLP service: `localhost:5001`
+
+---
+
+## Domain and Application Area
+
+- **Domain:** Artificial Intelligence and Machine Learning
+- **Application area:** Outdoor Safety and Navigation
+- **College:** MCA Final Year Project, Batch 2026–27
+
+---
+
+## What Makes It Different
+
+| Platform | Gap |
+|---|---|
+| Google Maps | Cannot represent unnamed, unofficial locations |
+| AllTrails | Only covers registered park trails; no human-written waypoints |
+| WhatsApp/social media | Trail info scattered, unsearchable, gets buried and lost |
+| **Ghost Trail** | Structured, community-verified paths for officially non-existent spots |
