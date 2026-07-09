@@ -1,70 +1,146 @@
-# Getting Started with Create React App
+# Ghost Trail 🌿
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+**NLP-Based Crowdsourced Navigation and Safety System for Hidden Outdoor Locations**
 
-## Available Scripts
+A full-stack web application that lets visitors to unnamed, off-grid natural locations leave behind step-by-step, landmark-based trail paths for future visitors — combined with an AI/ML component that automatically detects hazard language in comments to flag when a trail may have changed.
 
-In the project directory, you can run:
+---
 
-### `npm start`
+## The Problem
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+Standard map platforms (Google Maps, AllTrails) cannot represent unofficial, unnamed natural spots in any navigable way. People who find hidden waterfalls, secret lakes, and remote forest spots share directions informally through WhatsApp and social media — where the information gets lost, becomes stale, and can lead later visitors astray or into danger.
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+## The Solution
 
-### `npm test`
+Ghost Trail captures and structures this informal knowledge:
+- Visitors who find a hidden spot record a step-by-step, landmark-based path
+- Later visitors follow the same path waypoint by waypoint
+- An NLP microservice reads follower comments and auto-detects hazard language
+- Trail freshness decays over time and is upgraded by community confirmation
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+---
 
-### `npm run build`
+## Features
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+| Feature | Description |
+|---|---|
+| **Breadcrumb trail paths** | Step-by-step human-written waypoints with GPS coordinates |
+| **Story mode** | Each trail presented as a narrative, not just a list |
+| **Trail decay scoring** | Freshness degrades over time; NLP accelerates flagging |
+| **NLP hazard detection** | Python keyword-lexicon classifier detects hazard language in comments |
+| **GPS waypoint capture** | Browser Geolocation API captures coordinates at each waypoint |
+| **Leaflet map** | OpenStreetMap-powered map shows waypoint markers |
+| **SOS screen** | Live GPS coordinates, emergency call, location sharing |
+| **Offline-ready** | Trail data cached for no-signal environments |
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+---
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+## Tech Stack
 
-### `npm run eject`
+| Layer | Technology |
+|---|---|
+| Frontend | React, Leaflet, react-leaflet, Axios |
+| Backend | Node.js, Express.js |
+| Database | MongoDB Atlas (AWS Mumbai) |
+| NLP Microservice | Python, Flask, keyword-lexicon classifier |
+| Maps | Leaflet.js + OpenStreetMap (free, no API key) |
+| Version Control | Git + GitHub |
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+---
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## Project Structure
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+---
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+## NLP Component
 
-## Learn More
+The trail freshness signal uses a two-layer approach:
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+**Layer 1 — Date-based decay:**
+- Fresh: confirmed within 90 days
+- Caution: 90–180 days since last confirmation
+- Needs review: 180+ days
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+**Layer 2 — NLP comment analysis:**
+When a visitor submits a comment, the backend calls the Python NLP microservice at `POST /analyze`. The classifier checks for hazard keywords (overgrown, washed out, landslide, flooded, blocked, etc.) and returns:
+- Risk label: `clear` / `caution` / `needs_review`
+- Confidence score (0–1)
+- List of hazard keywords detected
 
-### Code Splitting
+A comment flagged as `needs_review` immediately escalates the trail's freshness status, regardless of the date threshold.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+---
 
-### Analyzing the Bundle Size
+## API Endpoints
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+| Method | Endpoint | Description |
+|---|---|---|
+| GET | `/api/trails` | Get all trails |
+| GET | `/api/trails/:id` | Get single trail |
+| POST | `/api/trails` | Create new trail |
+| PUT | `/api/trails/:id/confirm` | Reset freshness date |
+| POST | `/api/trails/:id/comments` | Add comment + auto NLP analysis |
 
-### Making a Progressive Web App
+---
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+## Setup Instructions
 
-### Advanced Configuration
+### Prerequisites
+- Node.js v18+
+- Python 3.10+
+- MongoDB Atlas account (free tier)
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+### 1. Clone the repo
+```bash
+git clone https://github.com/Sawanrawats1/ghost-trail.git
+cd ghost-trail
+```
 
-### Deployment
+### 2. Backend setup
+```bash
+cd backend
+npm install
+```
+Create `.env` file:
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+```bash
+node server.js
+```
 
-### `npm run build` fails to minify
+### 3. Frontend setup
+```bash
+cd frontend
+npm install
+npm start
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+### 4. NLP microservice setup
+```bash
+cd nlp
+pip install flask flask-cors
+python freshness.py
+```
+
+### Running all three together
+- Backend: `localhost:5000`
+- Frontend: `localhost:3000`
+- NLP service: `localhost:5001`
+
+---
+
+## Domain and Application Area
+
+- **Domain:** Artificial Intelligence and Machine Learning
+- **Application area:** Outdoor Safety and Navigation
+- **College:** MCA Final Year Project, Batch 2026–27
+
+---
+
+## What Makes It Different
+
+| Platform | Gap |
+|---|---|
+| Google Maps | Cannot represent unnamed, unofficial locations |
+| AllTrails | Only covers registered park trails; no human-written waypoints |
+| WhatsApp/social media | Trail info scattered, unsearchable, gets buried and lost |
+| **Ghost Trail** | Structured, community-verified paths for officially non-existent spots |
