@@ -4,6 +4,7 @@ import axios from 'axios';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
+import { useAuth } from '../AuthContext';
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -15,6 +16,7 @@ L.Icon.Default.mergeOptions({
 function TrailDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [trail, setTrail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
@@ -35,11 +37,12 @@ function TrailDetail() {
 
   const submitComment = async () => {
     if (!comment.trim()) return;
+    if (!user) { navigate('/auth'); return; }
     setSubmittingComment(true);
     try {
       const res = await axios.post(
         `http://localhost:5000/api/trails/${id}/comments`,
-        { text: comment, author: 'Visitor' }
+        { text: comment, author: user.name }
       );
       setCommentResult(res.data.nlpResult);
       setComment('');
@@ -85,6 +88,19 @@ function TrailDetail() {
             {freshness.label}
           </span>
         </div>
+
+        {/* Contributor card */}
+        {trail.createdBy && (
+          <div style={styles.contributorCard}>
+            <div style={styles.contributorAvatar}>
+              {trail.createdBy.charAt(0).toUpperCase()}
+            </div>
+            <div>
+              <div style={styles.contributorName}>🧭 {trail.createdBy}</div>
+              <div style={styles.contributorLabel}>Submitted this trail · Trailblazer</div>
+            </div>
+          </div>
+        )}
 
         {firstWpWithCoords && (
           <div style={styles.card}>
@@ -156,15 +172,28 @@ function TrailDetail() {
 
         <div style={styles.card}>
           <div style={styles.cardTitle}>💬 Leave a comment — help future visitors</div>
-          <textarea
-            style={styles.textarea}
-            placeholder="How was the trail? Any changes, hazards, or tips for the next visitor..."
-            value={comment}
-            onChange={e => setComment(e.target.value)}
-          />
-          <button style={styles.confirmBtn} onClick={submitComment} disabled={submittingComment}>
-            {submittingComment ? 'Analyzing...' : 'Submit comment'}
-          </button>
+          {!user && (
+            <div style={styles.signInPrompt}>
+              <span>Sign in to leave a comment</span>
+              <button style={styles.signInBtn} onClick={() => navigate('/auth')}>Sign in</button>
+            </div>
+          )}
+          {user && (
+            <>
+              <div style={styles.commentingAs}>
+                Commenting as <strong>{user.name}</strong>
+              </div>
+              <textarea
+                style={styles.textarea}
+                placeholder="How was the trail? Any changes, hazards, or tips for the next visitor..."
+                value={comment}
+                onChange={e => setComment(e.target.value)}
+              />
+              <button style={styles.confirmBtn} onClick={submitComment} disabled={submittingComment}>
+                {submittingComment ? 'Analyzing...' : 'Submit comment'}
+              </button>
+            </>
+          )}
 
           {commentResult && (
             <div style={{
@@ -193,7 +222,7 @@ function TrailDetail() {
                 <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid #F0F0F0' }}>
                   <div style={{ fontSize: '13px', color: '#1A1A1A' }}>{c.text}</div>
                   <div style={{ color: '#999', fontSize: '11px', marginTop: '3px', display: 'flex', gap: '8px' }}>
-                    <span>{c.author}</span>
+                    <span style={{ fontWeight: '500', color: '#639922' }}>👤 {c.author}</span>
                     <span>{new Date(c.date).toLocaleDateString()}</span>
                     <span style={{
                       color: c.nlpRisk === 'needs_review' ? '#A32D2D' :
@@ -209,9 +238,9 @@ function TrailDetail() {
           )}
         </div>
 
-<button style={styles.followBtn} onClick={() => navigate(`/follow/${id}`)}>
-  🧭 Follow this trail
-</button>
+        <button style={styles.followBtn} onClick={() => navigate(`/follow/${id}`)}>
+          🧭 Follow this trail
+        </button>
 
         <button style={styles.sosBtn} onClick={() => navigate('/sos')}>
           🆘 I'm lost / Need help
@@ -233,9 +262,18 @@ const styles = {
   container: { maxWidth: '680px', margin: '0 auto', padding: '20px 16px' },
   name: { fontSize: '22px', fontWeight: '600', color: '#1A1A1A', margin: '0 0 4px' },
   loc: { fontSize: '13px', color: '#666', marginBottom: '12px' },
-  tags: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px' },
+  tags: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' },
   tag: { fontSize: '11px', background: '#EAF3DE', color: '#27500A',
          padding: '3px 10px', borderRadius: '12px' },
+  contributorCard: { display: 'flex', alignItems: 'center', gap: '12px',
+                     background: '#EAF3DE', border: '1px solid #C0DD97',
+                     borderRadius: '12px', padding: '12px 16px', marginBottom: '14px' },
+  contributorAvatar: { width: '40px', height: '40px', borderRadius: '50%',
+                       background: '#27500A', color: '#fff', display: 'flex',
+                       alignItems: 'center', justifyContent: 'center',
+                       fontSize: '18px', fontWeight: '600', flexShrink: 0 },
+  contributorName: { fontSize: '14px', fontWeight: '600', color: '#27500A' },
+  contributorLabel: { fontSize: '11px', color: '#639922', marginTop: '2px' },
   card: { background: '#fff', border: '1px solid #E0E0E0', borderRadius: '12px',
           padding: '16px', marginBottom: '14px' },
   cardTitle: { fontSize: '14px', fontWeight: '600', color: '#1A1A1A', marginBottom: '12px' },
@@ -254,10 +292,16 @@ const styles = {
                 padding: '10px 20px', fontSize: '13px', cursor: 'pointer' },
   textarea: { width: '100%', padding: '8px 10px', fontSize: '13px', border: '1px solid #ddd',
               borderRadius: '8px', marginBottom: '10px', minHeight: '80px',
-              resize: 'vertical', boxSizing: 'border-box' },        
-    followBtn: { width: '100%', padding: '14px', background: '#639922', border: 'none',
-             borderRadius: '12px', color: '#fff', fontSize: '15px', fontWeight: '600',
-             cursor: 'pointer', marginTop: '4px', marginBottom: '8px' },
+              resize: 'vertical', boxSizing: 'border-box' },
+  signInPrompt: { display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                  background: '#F9FAF7', border: '1px solid #E0E0E0', borderRadius: '8px',
+                  padding: '12px 14px', marginBottom: '10px', fontSize: '13px', color: '#666' },
+  signInBtn: { background: '#27500A', color: '#fff', border: 'none', borderRadius: '6px',
+               padding: '6px 14px', fontSize: '12px', cursor: 'pointer' },
+  commentingAs: { fontSize: '12px', color: '#639922', marginBottom: '8px', fontWeight: '500' },
+  followBtn: { width: '100%', padding: '14px', background: '#639922', border: 'none',
+               borderRadius: '12px', color: '#fff', fontSize: '15px', fontWeight: '600',
+               cursor: 'pointer', marginTop: '4px', marginBottom: '8px' },
   sosBtn: { width: '100%', padding: '14px', background: '#A32D2D', border: 'none',
             borderRadius: '12px', color: '#fff', fontSize: '15px', fontWeight: '600',
             cursor: 'pointer', marginTop: '4px' }

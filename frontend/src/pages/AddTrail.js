@@ -1,9 +1,11 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import { useAuth } from '../AuthContext';
 
 function AddTrail() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [form, setForm] = useState({
     name: '', location: '', type: 'waterfall',
     difficulty: 'moderate', description: '', story: '', challenges: ''
@@ -13,6 +15,11 @@ function AddTrail() {
   ]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  // Redirect to login if not signed in
+  useEffect(() => {
+    if (!user) navigate('/auth');
+  }, [user, navigate]);
 
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
@@ -53,16 +60,32 @@ function AddTrail() {
     }
     setSubmitting(true); setError('');
     try {
-      await axios.post('http://localhost:5000/api/trails', { ...form, waypoints });
+      await axios.post('http://localhost:5000/api/trails', {
+        ...form,
+        waypoints,
+        createdBy: user ? user.name : 'Anonymous'
+      });
       navigate('/');
     } catch (err) { setError('Failed to submit. Try again.'); setSubmitting(false); }
   };
+
+  if (!user) return null;
 
   return (
     <div style={styles.page}>
       <div style={styles.container}>
         <h2 style={styles.title}>🗺 Share a hidden spot</h2>
         <p style={styles.sub}>Your path helps the next visitor reach it safely</p>
+
+        {/* Contributor badge */}
+        <div style={styles.contributorBadge}>
+          <div style={styles.contributorAvatar}>{user.name.charAt(0).toUpperCase()}</div>
+          <div>
+            <div style={styles.contributorName}>Submitting as {user.name}</div>
+            <div style={styles.contributorSub}>Your name will appear on this trail</div>
+          </div>
+        </div>
+
         {error && <div style={styles.error}>{error}</div>}
 
         <div style={styles.card}>
@@ -160,7 +183,16 @@ const styles = {
   page: { background: '#F9FAF7', minHeight: '100vh', fontFamily: 'Arial, sans-serif' },
   container: { maxWidth: '680px', margin: '0 auto', padding: '24px 16px' },
   title: { fontSize: '22px', fontWeight: '600', color: '#1A1A1A', margin: '0 0 4px' },
-  sub: { fontSize: '14px', color: '#666', marginBottom: '20px' },
+  sub: { fontSize: '14px', color: '#666', marginBottom: '12px' },
+  contributorBadge: { display: 'flex', alignItems: 'center', gap: '10px',
+                      background: '#EAF3DE', border: '1px solid #C0DD97',
+                      borderRadius: '10px', padding: '10px 14px', marginBottom: '16px' },
+  contributorAvatar: { width: '36px', height: '36px', borderRadius: '50%',
+                       background: '#27500A', color: '#fff', display: 'flex',
+                       alignItems: 'center', justifyContent: 'center',
+                       fontSize: '16px', fontWeight: '600', flexShrink: 0 },
+  contributorName: { fontSize: '13px', fontWeight: '600', color: '#27500A' },
+  contributorSub: { fontSize: '11px', color: '#639922', marginTop: '1px' },
   error: { background: '#FCEBEB', color: '#A32D2D', padding: '10px 14px',
            borderRadius: '8px', marginBottom: '16px', fontSize: '14px' },
   card: { background: '#fff', border: '1px solid #E0E0E0', borderRadius: '12px',
