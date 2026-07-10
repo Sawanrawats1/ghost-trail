@@ -209,6 +209,10 @@ function TrailDetail() {
           )}
         </div>
 
+<button style={styles.followBtn} onClick={() => navigate(`/follow/${id}`)}>
+  🧭 Follow this trail
+</button>
+
         <button style={styles.sosBtn} onClick={() => navigate('/sos')}>
           🆘 I'm lost / Need help
         </button>
@@ -250,7 +254,10 @@ const styles = {
                 padding: '10px 20px', fontSize: '13px', cursor: 'pointer' },
   textarea: { width: '100%', padding: '8px 10px', fontSize: '13px', border: '1px solid #ddd',
               borderRadius: '8px', marginBottom: '10px', minHeight: '80px',
-              resize: 'vertical', boxSizing: 'border-box' },
+              resize: 'vertical', boxSizing: 'border-box' },        
+    followBtn: { width: '100%', padding: '14px', background: '#639922', border: 'none',
+             borderRadius: '12px', color: '#fff', fontSize: '15px', fontWeight: '600',
+             cursor: 'pointer', marginTop: '4px', marginBottom: '8px' },
   sosBtn: { width: '100%', padding: '14px', background: '#A32D2D', border: 'none',
             borderRadius: '12px', color: '#fff', fontSize: '15px', fontWeight: '600',
             cursor: 'pointer', marginTop: '4px' }

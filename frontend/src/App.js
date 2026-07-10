@@ -5,6 +5,7 @@ import Navbar from './components/Navbar';
 import Home from './pages/Home';
 import TrailDetail from './pages/TrailDetail';
 import AddTrail from './pages/AddTrail';
+import FollowTrail from './pages/FollowTrail';
 import SOS from './pages/SOS';
 import './App.css';
 
@@ -17,6 +18,7 @@ function App() {
         <Route path="/" element={<Home />} />
         <Route path="/trail/:id" element={<TrailDetail />} />
         <Route path="/add" element={<AddTrail />} />
+        <Route path="/follow/:id" element={<FollowTrail />} />
         <Route path="/sos" element={<SOS />} />
       </Routes>
     </Router>
