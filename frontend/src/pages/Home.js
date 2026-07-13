@@ -172,7 +172,7 @@ function Home() {
           <span style={styles.bottomIcon}>📍</span>
           <span style={styles.bottomLabel}>Leave a Path</span>
         </button>
-        <button style={styles.bottomBtn} onClick={() => navigate('/auth')}>
+        <button style={styles.bottomBtn} onClick={() => navigate('/my-trails')}>
           <span style={styles.bottomIcon}>🔖</span>
           <span style={styles.bottomLabel}>My Trails</span>
         </button>

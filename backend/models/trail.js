@@ -30,6 +30,9 @@ const TrailSchema = new mongoose.Schema({
   comments:          [CommentSchema],
   lastConfirmedDate: { type: Date, default: Date.now },
   createdBy:         { type: String },
+  // Links trail to the account that created it, so "My Trails" can filter
+  // reliably. Optional/nullable so existing trails without it don't break.
+  contributorId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   totalVisitors:     { type: Number, default: 0 }
 }, { timestamps: true });
 

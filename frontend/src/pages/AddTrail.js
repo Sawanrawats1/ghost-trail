@@ -5,7 +5,7 @@ import { useAuth } from '../AuthContext';
 
 function AddTrail() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [form, setForm] = useState({
     name: '', location: '', type: 'waterfall',
     difficulty: 'moderate', description: '', story: '', challenges: ''
@@ -64,6 +64,8 @@ function AddTrail() {
         ...form,
         waypoints,
         createdBy: user ? user.name : 'Anonymous'
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
       });
       navigate('/');
     } catch (err) { setError('Failed to submit. Try again.'); setSubmitting(false); }
