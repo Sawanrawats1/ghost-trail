@@ -129,13 +129,22 @@ function Home() {
         {filtered.map(trail => {
           const freshness = getFreshness(trail.lastConfirmedDate);
           const days = Math.floor((new Date() - new Date(trail.lastConfirmedDate)) / (1000*60*60*24));
+          const health = trail.healthScore; // { score, label, color, bg }
           return (
             <Link to={`/trail/${trail._id}`} key={trail._id} style={styles.cardLink}>
               <div style={styles.card}>
                 <div style={styles.cardMain}>
                   <div style={styles.cardIcon}>{getIcon(trail.type)}</div>
                   <div style={styles.cardBody}>
-                    <div style={styles.cardName}>{trail.name}</div>
+                    <div style={styles.cardTopRow}>
+                      <div style={styles.cardName}>{trail.name}</div>
+                      {health && (
+                        <div style={{ ...styles.healthBadge, background: health.bg, color: health.color }}
+                          title={`Freshness: ${health.breakdown?.freshnessScore} · Risk: ${health.breakdown?.riskScore}`}>
+                          {health.score} · {health.label}
+                        </div>
+                      )}
+                    </div>
                     <div style={styles.cardLoc}>📍 {trail.location}</div>
                     <div style={styles.cardTags}>
                       <span style={styles.tagDiff}>{trail.difficulty}</span>
@@ -212,7 +221,10 @@ const styles = {
   cardIcon: { width: '68px', display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: '26px', background: '#EAF3DE', flexShrink: 0 },
   cardBody: { padding: '11px 14px', flex: 1 },
+  cardTopRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px' },
   cardName: { fontSize: '15px', fontWeight: '600', color: '#1A1A1A' },
+  healthBadge: { fontSize: '10px', fontWeight: '700', padding: '3px 8px', borderRadius: '10px',
+                 whiteSpace: 'nowrap', flexShrink: 0 },
   cardLoc: { fontSize: '12px', color: '#777', margin: '3px 0 7px' },
   cardTags: { display: 'flex', gap: '6px', flexWrap: 'wrap' },
   tagDiff: { fontSize: '10px', padding: '2px 8px', borderRadius: '10px', background: '#F0F0F0', color: '#555' },

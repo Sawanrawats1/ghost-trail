@@ -16,6 +16,9 @@ app.use('/api/trails', trailRoutes);
 const authRoutes = require('./routes/auth');
 app.use('/api/auth', authRoutes);
 
+const sosRoutes = require('./routes/sos');
+app.use('/api/sos', sosRoutes);
+
 // Test route
 app.get('/', (req, res) => {
   res.json({ message: 'Ghost Trail API is running!' });

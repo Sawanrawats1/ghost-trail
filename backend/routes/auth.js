@@ -29,6 +29,14 @@ function checkPasswordStrength(password) {
   return { valid: true, strength: 'medium', message: 'Acceptable password' };
 }
 
+// Small helper — decodes the JWT from the Authorization header.
+// Throws if missing/invalid, so routes using this should catch it.
+function requireUser(req) {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) throw new Error('No token');
+  return jwt.verify(token, process.env.JWT_SECRET); // { id, name, email }
+}
+
 // GET /api/auth/check-email?email=... — real-time availability check
 router.get('/check-email', async (req, res) => {
   try {
@@ -129,6 +137,33 @@ router.get('/me', async (req, res) => {
     res.json(user);
   } catch (err) {
     res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+// PUT /api/auth/emergency-contact — set/update the SOS emergency contact
+router.put('/emergency-contact', async (req, res) => {
+  try {
+    const decoded = requireUser(req);
+    const name = (req.body.name || '').trim();
+    const email = (req.body.email || '').trim().toLowerCase();
+
+    if (!name || !email) {
+      return res.status(400).json({ error: 'Contact name and email are required' });
+    }
+    if (!EMAIL_REGEX.test(email)) {
+      return res.status(400).json({ error: 'Please enter a valid contact email address' });
+    }
+
+    const user = await User.findByIdAndUpdate(
+      decoded.id,
+      { emergencyContactName: name, emergencyContactEmail: email },
+      { new: true }
+    ).select('-password');
+
+    if (!user) return res.status(404).json({ error: 'User not found' });
+    res.json(user);
+  } catch (err) {
+    res.status(401).json({ error: 'Please log in again' });
   }
 });
 

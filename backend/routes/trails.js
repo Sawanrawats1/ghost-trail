@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const jwt = require('jsonwebtoken');
 const Trail = require('../models/Trail');
+const { calculateHealthScore } = require('../utils/trailHealth');
 
 // Small helper — decodes the JWT from the Authorization header if present.
 // Returns null instead of throwing, so routes that don't strictly require
@@ -16,11 +17,18 @@ function getUserFromToken(req) {
   }
 }
 
+// Attaches a computed (not stored) healthScore field to a trail document
+function withHealthScore(trail) {
+  const obj = trail.toObject ? trail.toObject() : trail;
+  obj.healthScore = calculateHealthScore(obj);
+  return obj;
+}
+
 // GET all trails
 router.get('/', async (req, res) => {
   try {
     const trails = await Trail.find();
-    res.json(trails);
+    res.json(trails.map(withHealthScore));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -35,7 +43,7 @@ router.get('/mine', async (req, res) => {
     if (!user) return res.status(401).json({ error: 'Login required to view your trails' });
 
     const trails = await Trail.find({ contributorId: user.id }).sort({ createdAt: -1 });
-    res.json(trails);
+    res.json(trails.map(withHealthScore));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -46,7 +54,7 @@ router.get('/:id', async (req, res) => {
   try {
     const trail = await Trail.findById(req.params.id);
     if (!trail) return res.status(404).json({ error: 'Trail not found' });
-    res.json(trail);
+    res.json(withHealthScore(trail));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -89,7 +97,7 @@ router.put('/:id', async (req, res) => {
     });
 
     const updated = await trail.save();
-    res.json(updated);
+    res.json(withHealthScore(updated));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -123,7 +131,7 @@ router.put('/:id/confirm', async (req, res) => {
       { lastConfirmedDate: Date.now() },
       { new: true }
     );
-    res.json({ message: 'Trail confirmed fresh', trail });
+    res.json({ message: 'Trail confirmed fresh', trail: withHealthScore(trail) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -160,7 +168,7 @@ router.post('/:id/comments', async (req, res) => {
       { new: true }
     );
 
-    res.json({ comment, nlpResult, trail });
+    res.json({ comment, nlpResult, trail: withHealthScore(trail) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
