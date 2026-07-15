@@ -12,6 +12,21 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
+// Haversine formula — great-circle distance between two lat/lng points, in km.
+// Standard approach for "as the crow flies" distance on a sphere; accurate
+// enough for trail discovery (doesn't account for actual road/trail routing).
+function haversineDistance(lat1, lng1, lat2, lng2) {
+  const R = 6371; // Earth's radius in km
+  const toRad = (deg) => (deg * Math.PI) / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
 function Home() {
   const [trails, setTrails] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -19,11 +34,41 @@ function Home() {
   const [search, setSearch] = useState('');
   const navigate = useNavigate();
 
+  const [userLocation, setUserLocation] = useState(null);
+  const [locationStatus, setLocationStatus] = useState('idle'); // idle | loading | granted | denied
+  const [sortByDistance, setSortByDistance] = useState(false);
+
   useEffect(() => {
     axios.get('http://localhost:5000/api/trails')
       .then(res => { setTrails(res.data); setLoading(false); })
       .catch(() => setLoading(false));
   }, []);
+
+  const findNearMe = () => {
+    if (!navigator.geolocation) {
+      setLocationStatus('denied');
+      return;
+    }
+    setLocationStatus('loading');
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        setUserLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+        setLocationStatus('granted');
+        setSortByDistance(true);
+      },
+      () => setLocationStatus('denied'),
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
+
+  const getTrailCoords = (trail) => trail.waypoints?.find(w => w.lat && w.lng);
+
+  const getDistance = (trail) => {
+    if (!userLocation) return null;
+    const wp = getTrailCoords(trail);
+    if (!wp) return null;
+    return haversineDistance(userLocation.lat, userLocation.lng, wp.lat, wp.lng);
+  };
 
   const getFreshness = (date) => {
     const days = Math.floor((new Date() - new Date(date)) / (1000 * 60 * 60 * 24));
@@ -37,12 +82,22 @@ function Home() {
     return icons[type] || '📍';
   };
 
-  const filtered = trails.filter(t => {
+  let filtered = trails.filter(t => {
     const matchFilter = filter === 'all' || t.type === filter;
     const matchSearch = t.name.toLowerCase().includes(search.toLowerCase()) ||
                         t.location.toLowerCase().includes(search.toLowerCase());
     return matchFilter && matchSearch;
   });
+
+  if (sortByDistance && userLocation) {
+    filtered = [...filtered].sort((a, b) => {
+      const distA = getDistance(a);
+      const distB = getDistance(b);
+      if (distA === null) return 1;
+      if (distB === null) return -1;
+      return distA - distB;
+    });
+  }
 
   const trailsWithCoords = trails.filter(t => t.waypoints?.some(w => w.lat && w.lng));
   const mapCenter = trailsWithCoords.length > 0
@@ -61,7 +116,6 @@ function Home() {
 
   return (
     <div style={styles.page}>
-      {/* Hero map */}
       <div style={styles.heroWrap}>
         <MapContainer center={mapCenter} zoom={9}
           style={{ height: '100%', width: '100%' }}
@@ -89,7 +143,6 @@ function Home() {
         </div>
       </div>
 
-      {/* Search */}
       <div style={styles.searchWrap}>
         <div style={styles.searchBar}>
           <span>🔍</span>
@@ -99,7 +152,25 @@ function Home() {
         </div>
       </div>
 
-      {/* Filters */}
+      <div style={styles.nearMeWrap}>
+        {locationStatus !== 'granted' && (
+          <button style={styles.nearMeBtn} onClick={findNearMe} disabled={locationStatus === 'loading'}>
+            📍 {locationStatus === 'loading' ? 'Finding your location...' : 'Find trails near me'}
+          </button>
+        )}
+        {locationStatus === 'granted' && (
+          <div style={styles.nearMeActive}>
+            <span>📍 Sorted by distance from you</span>
+            <button style={styles.nearMeToggle} onClick={() => setSortByDistance(!sortByDistance)}>
+              {sortByDistance ? 'Show default order' : 'Sort by distance'}
+            </button>
+          </div>
+        )}
+        {locationStatus === 'denied' && (
+          <div style={styles.nearMeDenied}>Couldn't get your location — check browser permissions</div>
+        )}
+      </div>
+
       <div style={styles.filtersWrap}>
         {filters.map(f => (
           <button key={f.key} style={{
@@ -113,7 +184,6 @@ function Home() {
         ))}
       </div>
 
-      {/* Trail list */}
       <div style={styles.listWrap}>
         {loading && <div style={styles.emptyState}><div style={styles.emptyIcon}>🌿</div><p>Loading...</p></div>}
 
@@ -129,7 +199,8 @@ function Home() {
         {filtered.map(trail => {
           const freshness = getFreshness(trail.lastConfirmedDate);
           const days = Math.floor((new Date() - new Date(trail.lastConfirmedDate)) / (1000*60*60*24));
-          const health = trail.healthScore; // { score, label, color, bg }
+          const health = trail.healthScore;
+          const distance = getDistance(trail);
           return (
             <Link to={`/trail/${trail._id}`} key={trail._id} style={styles.cardLink}>
               <div style={styles.card}>
@@ -145,7 +216,12 @@ function Home() {
                         </div>
                       )}
                     </div>
-                    <div style={styles.cardLoc}>📍 {trail.location}</div>
+                    <div style={styles.cardLoc}>
+                      📍 {trail.location}
+                      {distance !== null && (
+                        <span style={styles.distanceTag}> · {distance < 1 ? `${Math.round(distance * 1000)} m` : `${distance.toFixed(1)} km`} away</span>
+                      )}
+                    </div>
                     <div style={styles.cardTags}>
                       <span style={styles.tagDiff}>{trail.difficulty}</span>
                       <span style={styles.tagType}>{trail.type}</span>
@@ -171,7 +247,6 @@ function Home() {
         })}
       </div>
 
-      {/* Bottom navbar — like the mockup */}
       <div style={styles.bottomNav}>
         <button style={styles.bottomBtn} onClick={() => navigate('/')}>
           <span style={styles.bottomIcon}>🧭</span>
@@ -211,6 +286,17 @@ const styles = {
   searchBar: { display: 'flex', alignItems: 'center', gap: '8px', background: '#fff',
                border: '1px solid #E0E0E0', borderRadius: '12px', padding: '10px 14px' },
   searchInput: { flex: 1, border: 'none', outline: 'none', fontSize: '14px', background: 'transparent' },
+  nearMeWrap: { padding: '10px 16px 0' },
+  nearMeBtn: { width: '100%', padding: '11px', background: '#fff', border: '1px solid #27500A',
+               borderRadius: '10px', color: '#27500A', fontSize: '13px', fontWeight: '600',
+               cursor: 'pointer' },
+  nearMeActive: { display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  background: '#EAF3DE', border: '1px solid #639922', borderRadius: '10px',
+                  padding: '10px 14px', fontSize: '12px', color: '#27500A' },
+  nearMeToggle: { background: 'none', border: 'none', color: '#185FA5', fontSize: '12px',
+                  fontWeight: '600', cursor: 'pointer', textDecoration: 'underline' },
+  nearMeDenied: { fontSize: '12px', color: '#A32D2D', padding: '8px 4px' },
+  distanceTag: { color: '#185FA5', fontWeight: '600' },
   filtersWrap: { display: 'flex', gap: '8px', padding: '10px 16px', overflowX: 'auto' },
   filterPill: { padding: '6px 14px', fontSize: '12px', borderRadius: '20px',
                 cursor: 'pointer', whiteSpace: 'nowrap', fontFamily: 'Arial, sans-serif' },
