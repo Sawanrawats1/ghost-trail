@@ -4,46 +4,47 @@ const jwt = require('jsonwebtoken');
 const Trail = require('../models/Trail');
 const { calculateHealthScore } = require('../utils/trailHealth');
 
-// Small helper — decodes the JWT from the Authorization header if present.
-// Returns null instead of throwing, so routes that don't strictly require
-// auth (like POST /) can still work for anonymous/legacy calls.
 function getUserFromToken(req) {
   try {
     const token = req.headers.authorization?.split(' ')[1];
     if (!token) return null;
-    return jwt.verify(token, process.env.JWT_SECRET); // { id, name, email }
+    return jwt.verify(token, process.env.JWT_SECRET);
   } catch (err) {
     return null;
   }
 }
 
-// Attaches a computed (not stored) healthScore field to a trail document
-function withHealthScore(trail) {
+// Attaches computed fields (health score, upvote count, whether the
+// requesting user has upvoted) without storing them in the database.
+function withComputedFields(trail, currentUserId) {
   const obj = trail.toObject ? trail.toObject() : trail;
   obj.healthScore = calculateHealthScore(obj);
+  obj.upvoteCount = obj.upvotedBy?.length || 0;
+  obj.hasUpvoted = currentUserId
+    ? (obj.upvotedBy || []).some((id) => id.toString() === currentUserId)
+    : false;
   return obj;
 }
 
 // GET all trails
 router.get('/', async (req, res) => {
   try {
+    const user = getUserFromToken(req);
     const trails = await Trail.find();
-    res.json(trails.map(withHealthScore));
+    res.json(trails.map((t) => withComputedFields(t, user?.id)));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // GET trails contributed by the logged-in user (My Trails page)
-// IMPORTANT: this must come BEFORE /:id, or Express will try to treat
-// "mine" as a trail ID and 404/CastError on ObjectId parsing.
 router.get('/mine', async (req, res) => {
   try {
     const user = getUserFromToken(req);
     if (!user) return res.status(401).json({ error: 'Login required to view your trails' });
 
     const trails = await Trail.find({ contributorId: user.id }).sort({ createdAt: -1 });
-    res.json(trails.map(withHealthScore));
+    res.json(trails.map((t) => withComputedFields(t, user.id)));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -52,9 +53,10 @@ router.get('/mine', async (req, res) => {
 // GET single trail by ID
 router.get('/:id', async (req, res) => {
   try {
+    const user = getUserFromToken(req);
     const trail = await Trail.findById(req.params.id);
     if (!trail) return res.status(404).json({ error: 'Trail not found' });
-    res.json(withHealthScore(trail));
+    res.json(withComputedFields(trail, user?.id));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -65,7 +67,7 @@ router.post('/', async (req, res) => {
   try {
     const user = getUserFromToken(req);
     const trailData = { ...req.body };
-    if (user) trailData.contributorId = user.id; // auto-attach if logged in
+    if (user) trailData.contributorId = user.id;
 
     const trail = new Trail(trailData);
     const saved = await trail.save();
@@ -84,20 +86,17 @@ router.put('/:id', async (req, res) => {
     const trail = await Trail.findById(req.params.id);
     if (!trail) return res.status(404).json({ error: 'Trail not found' });
 
-    // Legacy trails (seeded before contributorId existed) have no owner —
-    // block edits on those too, rather than letting anyone claim them.
     if (!trail.contributorId || trail.contributorId.toString() !== user.id) {
       return res.status(403).json({ error: 'You can only edit trails you contributed' });
     }
 
-    // Only allow editing safe, non-structural fields — not waypoints/comments/contributorId here
     const editableFields = ['name', 'location', 'type', 'difficulty', 'description', 'story', 'challenges'];
     editableFields.forEach(field => {
       if (req.body[field] !== undefined) trail[field] = req.body[field];
     });
 
     const updated = await trail.save();
-    res.json(withHealthScore(updated));
+    res.json(withComputedFields(updated, user.id));
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
@@ -126,12 +125,13 @@ router.delete('/:id', async (req, res) => {
 // PUT confirm trail is still fresh (trail decay reset)
 router.put('/:id/confirm', async (req, res) => {
   try {
+    const user = getUserFromToken(req);
     const trail = await Trail.findByIdAndUpdate(
       req.params.id,
       { lastConfirmedDate: Date.now() },
       { new: true }
     );
-    res.json({ message: 'Trail confirmed fresh', trail: withHealthScore(trail) });
+    res.json({ message: 'Trail confirmed fresh', trail: withComputedFields(trail, user?.id) });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -140,10 +140,10 @@ router.put('/:id/confirm', async (req, res) => {
 // POST add comment + auto NLP analysis
 router.post('/:id/comments', async (req, res) => {
   try {
+    const user = getUserFromToken(req);
     const { text, author } = req.body;
     if (!text) return res.status(400).json({ error: 'Comment text required' });
 
-    // Call NLP service
     const nlpResponse = await fetch('http://127.0.0.1:5001/analyze', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -151,7 +151,6 @@ router.post('/:id/comments', async (req, res) => {
     });
     const nlpResult = await nlpResponse.json();
 
-    // Build comment object
     const comment = {
       text,
       author: author || 'Anonymous',
@@ -161,14 +160,86 @@ router.post('/:id/comments', async (req, res) => {
       hazardKeywords: nlpResult.hazard_keywords_found
     };
 
-    // Add comment to trail
     const trail = await Trail.findByIdAndUpdate(
       req.params.id,
       { $push: { comments: comment } },
       { new: true }
     );
 
-    res.json({ comment, nlpResult, trail: withHealthScore(trail) });
+    res.json({ comment, nlpResult, trail: withComputedFields(trail, user?.id) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST add a photo — the file itself was already uploaded to Cloudinary
+// client-side; this just attaches the resulting URL to the trail record.
+router.post('/:id/photos', async (req, res) => {
+  try {
+    const user = getUserFromToken(req);
+    if (!user) return res.status(401).json({ error: 'Login required to add photos' });
+
+    const { url } = req.body;
+    if (!url) return res.status(400).json({ error: 'Photo URL required' });
+
+    const photo = { url, uploadedBy: user.name, uploadedById: user.id, date: new Date() };
+
+    const trail = await Trail.findByIdAndUpdate(
+      req.params.id,
+      { $push: { photos: photo } },
+      { new: true }
+    );
+    if (!trail) return res.status(404).json({ error: 'Trail not found' });
+
+    res.json({ photo, trail: withComputedFields(trail, user.id) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE a photo — only the person who uploaded it can remove it
+router.delete('/:id/photos/:photoId', async (req, res) => {
+  try {
+    const user = getUserFromToken(req);
+    if (!user) return res.status(401).json({ error: 'Login required' });
+
+    const trail = await Trail.findById(req.params.id);
+    if (!trail) return res.status(404).json({ error: 'Trail not found' });
+
+    const photo = trail.photos.id(req.params.photoId);
+    if (!photo) return res.status(404).json({ error: 'Photo not found' });
+
+    if (!photo.uploadedById || photo.uploadedById.toString() !== user.id) {
+      return res.status(403).json({ error: 'You can only delete photos you uploaded' });
+    }
+
+    photo.deleteOne();
+    const updated = await trail.save();
+    res.json(withComputedFields(updated, user.id));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST toggle upvote — each user can upvote once, and can un-upvote by
+// calling this again.
+router.post('/:id/upvote', async (req, res) => {
+  try {
+    const user = getUserFromToken(req);
+    if (!user) return res.status(401).json({ error: 'Login required to upvote' });
+
+    const trail = await Trail.findById(req.params.id);
+    if (!trail) return res.status(404).json({ error: 'Trail not found' });
+
+    const alreadyUpvoted = trail.upvotedBy.some((id) => id.toString() === user.id);
+    if (alreadyUpvoted) {
+      trail.upvotedBy = trail.upvotedBy.filter((id) => id.toString() !== user.id);
+    } else {
+      trail.upvotedBy.push(user.id);
+    }
+
+    const updated = await trail.save();
+    res.json(withComputedFields(updated, user.id));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

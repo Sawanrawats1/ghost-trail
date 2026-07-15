@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useEffect, useState, useRef } from 'react';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import axios from 'axios';
 import { MapContainer, TileLayer, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -13,10 +13,15 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.7.1/images/marker-shadow.png',
 });
 
+// Cloudinary config — unsigned upload preset, safe to expose in frontend code
+// (that's the whole point of unsigned presets: no secret keys involved).
+const CLOUDINARY_CLOUD_NAME = 'xvzyyjvo';
+const CLOUDINARY_UPLOAD_PRESET = 'ghost_trail_photos';
+
 function TrailDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, token } = useAuth();
   const [trail, setTrail] = useState(null);
   const [loading, setLoading] = useState(true);
   const [confirmed, setConfirmed] = useState(false);
@@ -24,14 +29,23 @@ function TrailDetail() {
   const [commentResult, setCommentResult] = useState(null);
   const [submittingComment, setSubmittingComment] = useState(false);
 
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [photoError, setPhotoError] = useState('');
+  const fileInputRef = useRef(null);
+
+  const [upvoting, setUpvoting] = useState(false);
+
+  const authHeaders = token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+
   useEffect(() => {
-    axios.get(`http://localhost:5000/api/trails/${id}`)
+    axios.get(`http://localhost:5000/api/trails/${id}`, authHeaders)
       .then(res => { setTrail(res.data); setLoading(false); })
       .catch(err => { console.log(err); setLoading(false); });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   const confirmFresh = async () => {
-    await axios.put(`http://localhost:5000/api/trails/${id}/confirm`);
+    await axios.put(`http://localhost:5000/api/trails/${id}/confirm`, {}, authHeaders);
     setConfirmed(true);
   };
 
@@ -42,14 +56,72 @@ function TrailDetail() {
     try {
       const res = await axios.post(
         `http://localhost:5000/api/trails/${id}/comments`,
-        { text: comment, author: user.name }
+        { text: comment, author: user.name },
+        authHeaders
       );
       setCommentResult(res.data.nlpResult);
       setComment('');
-      const updated = await axios.get(`http://localhost:5000/api/trails/${id}`);
-      setTrail(updated.data);
+      setTrail(res.data.trail);
     } catch (err) { console.log(err); }
     setSubmittingComment(false);
+  };
+
+  const handlePhotoSelect = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!user) { navigate('/auth'); return; }
+
+    setPhotoError('');
+    setUploadingPhoto(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+
+      const cloudinaryRes = await fetch(
+        `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`,
+        { method: 'POST', body: formData }
+      );
+      const cloudinaryData = await cloudinaryRes.json();
+
+      if (!cloudinaryData.secure_url) {
+        throw new Error(cloudinaryData.error?.message || 'Upload failed');
+      }
+
+      const saveRes = await axios.post(
+        `http://localhost:5000/api/trails/${id}/photos`,
+        { url: cloudinaryData.secure_url },
+        authHeaders
+      );
+      setTrail(saveRes.data.trail);
+    } catch (err) {
+      setPhotoError('Photo upload failed. Please try again.');
+    }
+    setUploadingPhoto(false);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const [deletingPhotoId, setDeletingPhotoId] = useState(null);
+
+  const deletePhoto = async (photoId) => {
+    setDeletingPhotoId(photoId);
+    try {
+      const res = await axios.delete(`http://localhost:5000/api/trails/${id}/photos/${photoId}`, authHeaders);
+      setTrail(res.data);
+    } catch (err) {
+      console.log(err);
+    }
+    setDeletingPhotoId(null);
+  };
+
+  const toggleUpvote = async () => {
+    if (!user) { navigate('/auth'); return; }
+    setUpvoting(true);
+    try {
+      const res = await axios.post(`http://localhost:5000/api/trails/${id}/upvote`, {}, authHeaders);
+      setTrail(res.data);
+    } catch (err) { console.log(err); }
+    setUpvoting(false);
   };
 
   const getFreshness = (date) => {
@@ -78,7 +150,16 @@ function TrailDetail() {
       </div>
 
       <div style={styles.container}>
-        <h1 style={styles.name}>{trail.name}</h1>
+        <div style={styles.nameRow}>
+          <h1 style={styles.name}>{trail.name}</h1>
+          <button
+            style={{ ...styles.upvoteBtn, ...(trail.hasUpvoted ? styles.upvoteBtnActive : {}) }}
+            onClick={toggleUpvote}
+            disabled={upvoting}
+          >
+            👍 {trail.upvoteCount || 0}
+          </button>
+        </div>
         <div style={styles.loc}>📍 {trail.location}</div>
 
         <div style={styles.tags}>
@@ -89,7 +170,6 @@ function TrailDetail() {
           </span>
         </div>
 
-        {/* Contributor card */}
         {trail.createdBy && (
           <div style={styles.contributorCard}>
             <div style={styles.contributorAvatar}>
@@ -133,6 +213,50 @@ function TrailDetail() {
             <p style={styles.storyText}>{trail.story}</p>
           </div>
         )}
+
+        <div style={styles.card}>
+          <div style={styles.cardTitle}>📷 Photos from visitors</div>
+
+          {trail.photos?.length > 0 ? (
+            <div style={styles.photoGrid}>
+              {trail.photos.map((photo) => (
+                <div key={photo._id} style={styles.photoWrap}>
+                  <a href={photo.url} target="_blank" rel="noopener noreferrer" style={styles.photoLink}>
+                    <img src={photo.url} alt={`${trail.name} — uploaded by ${photo.uploadedBy}`} style={styles.photoThumb} />
+                  </a>
+                  {user && photo.uploadedById === user.id && (
+                    <button
+                      style={styles.deletePhotoBtn}
+                      onClick={() => deletePhoto(photo._id)}
+                      disabled={deletingPhotoId === photo._id}
+                      title="Remove this photo"
+                    >
+                      {deletingPhotoId === photo._id ? '…' : '✕'}
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p style={styles.noPhotosText}>No photos yet — be the first to share what this trail actually looks like.</p>
+          )}
+
+          <input
+            type="file"
+            accept="image/*"
+            ref={fileInputRef}
+            onChange={handlePhotoSelect}
+            style={{ display: 'none' }}
+          />
+          <button
+            style={styles.addPhotoBtn}
+            onClick={() => user ? fileInputRef.current.click() : navigate('/auth')}
+            disabled={uploadingPhoto}
+          >
+            {uploadingPhoto ? 'Uploading...' : '+ Add a photo'}
+          </button>
+          {photoError && <div style={styles.photoError}>{photoError}</div>}
+        </div>
 
         <div style={styles.card}>
           <div style={styles.cardTitle}>🧭 Trail path — follow these steps</div>
@@ -260,7 +384,12 @@ const styles = {
              fontSize: '13px', color: '#27500A' },
   heroIcon: { fontSize: '56px' },
   container: { maxWidth: '680px', margin: '0 auto', padding: '20px 16px' },
+  nameRow: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '10px' },
   name: { fontSize: '22px', fontWeight: '600', color: '#1A1A1A', margin: '0 0 4px' },
+  upvoteBtn: { flexShrink: 0, padding: '7px 14px', fontSize: '13px', fontWeight: '600',
+               borderRadius: '20px', border: '1px solid #ddd', background: '#fff',
+               color: '#444', cursor: 'pointer', whiteSpace: 'nowrap' },
+  upvoteBtnActive: { background: '#EAF3DE', border: '1px solid #27500A', color: '#27500A' },
   loc: { fontSize: '13px', color: '#666', marginBottom: '12px' },
   tags: { display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' },
   tag: { fontSize: '11px', background: '#EAF3DE', color: '#27500A',
@@ -279,6 +408,19 @@ const styles = {
   cardTitle: { fontSize: '14px', fontWeight: '600', color: '#1A1A1A', marginBottom: '12px' },
   storyText: { fontSize: '14px', color: '#444', lineHeight: '1.7', margin: 0,
                fontStyle: 'italic', borderLeft: '3px solid #639922', paddingLeft: '12px' },
+  photoGrid: { display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px', marginBottom: '12px' },
+  photoWrap: { position: 'relative', borderRadius: '8px', overflow: 'hidden', aspectRatio: '1' },
+  photoLink: { display: 'block', width: '100%', height: '100%' },
+  photoThumb: { width: '100%', height: '100%', objectFit: 'cover', display: 'block' },
+  deletePhotoBtn: { position: 'absolute', top: '4px', right: '4px', width: '22px', height: '22px',
+                    borderRadius: '50%', border: 'none', background: 'rgba(163,45,45,0.9)',
+                    color: '#fff', fontSize: '12px', cursor: 'pointer', display: 'flex',
+                    alignItems: 'center', justifyContent: 'center', lineHeight: 1, padding: 0 },
+  noPhotosText: { fontSize: '13px', color: '#888', marginBottom: '12px' },
+  addPhotoBtn: { background: '#EAF3DE', border: '1px solid #639922', color: '#27500A',
+                 padding: '9px 18px', borderRadius: '20px', cursor: 'pointer', fontSize: '13px',
+                 fontWeight: '500' },
+  photoError: { color: '#A32D2D', fontSize: '12px', marginTop: '8px' },
   wpRow: { display: 'flex', gap: '12px', alignItems: 'flex-start',
            padding: '10px 0', borderBottom: '1px solid #F0F0F0' },
   wpNum: { width: '26px', height: '26px', borderRadius: '50%', background: '#EAF3DE',

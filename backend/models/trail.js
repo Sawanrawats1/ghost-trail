@@ -18,6 +18,17 @@ const CommentSchema = new mongoose.Schema({
   hazardKeywords: [{ type: String }]
 });
 
+// A visitor-submitted photo — proves the trail is real and shows current
+// conditions. Hosted on Cloudinary; only the resulting URL is stored here.
+const PhotoSchema = new mongoose.Schema({
+  url:            { type: String, required: true },
+  uploadedBy:     { type: String, default: 'Anonymous' },
+  // Tracks who uploaded it (by account) so only that user can delete it later —
+  // separate from the display name above, which could theoretically collide.
+  uploadedById:   { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  date:           { type: Date, default: Date.now }
+});
+
 const TrailSchema = new mongoose.Schema({
   name:              { type: String, required: true },
   location:          { type: String, required: true },
@@ -28,10 +39,10 @@ const TrailSchema = new mongoose.Schema({
   challenges:        { type: String },
   waypoints:         [WaypointSchema],
   comments:          [CommentSchema],
+  photos:            [PhotoSchema],
+  upvotedBy:         [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
   lastConfirmedDate: { type: Date, default: Date.now },
   createdBy:         { type: String },
-  // Links trail to the account that created it, so "My Trails" can filter
-  // reliably. Optional/nullable so existing trails without it don't break.
   contributorId:     { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   totalVisitors:     { type: Number, default: 0 }
 }, { timestamps: true });
