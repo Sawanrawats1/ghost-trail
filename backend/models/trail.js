@@ -12,6 +12,8 @@ const WaypointSchema = new mongoose.Schema({
 const CommentSchema = new mongoose.Schema({
   text:           { type: String, required: true },
   author:         { type: String, default: 'Anonymous' },
+  // Tracks who posted it (by account), so only that user can delete it later
+  commenterId:    { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
   date:           { type: Date, default: Date.now },
   nlpRisk:        { type: String, enum: ['clear', 'caution', 'needs_review'] },
   nlpConfidence:  { type: Number },

@@ -154,6 +154,7 @@ router.post('/:id/comments', async (req, res) => {
     const comment = {
       text,
       author: author || 'Anonymous',
+      commenterId: user?.id || null,
       date: new Date(),
       nlpRisk: nlpResult.risk,
       nlpConfidence: nlpResult.confidence,
@@ -167,6 +168,30 @@ router.post('/:id/comments', async (req, res) => {
     );
 
     res.json({ comment, nlpResult, trail: withComputedFields(trail, user?.id) });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE a comment — only the person who posted it can remove it
+router.delete('/:id/comments/:commentId', async (req, res) => {
+  try {
+    const user = getUserFromToken(req);
+    if (!user) return res.status(401).json({ error: 'Login required' });
+
+    const trail = await Trail.findById(req.params.id);
+    if (!trail) return res.status(404).json({ error: 'Trail not found' });
+
+    const comment = trail.comments.id(req.params.commentId);
+    if (!comment) return res.status(404).json({ error: 'Comment not found' });
+
+    if (!comment.commenterId || comment.commenterId.toString() !== user.id) {
+      return res.status(403).json({ error: 'You can only delete comments you posted' });
+    }
+
+    comment.deleteOne();
+    const updated = await trail.save();
+    res.json(withComputedFields(updated, user.id));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

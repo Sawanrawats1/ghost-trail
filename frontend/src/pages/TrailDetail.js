@@ -103,6 +103,19 @@ function TrailDetail() {
 
   const [deletingPhotoId, setDeletingPhotoId] = useState(null);
 
+  const [deletingCommentId, setDeletingCommentId] = useState(null);
+
+  const deleteComment = async (commentId) => {
+    setDeletingCommentId(commentId);
+    try {
+      const res = await axios.delete(`http://localhost:5000/api/trails/${id}/comments/${commentId}`, authHeaders);
+      setTrail(res.data);
+    } catch (err) {
+      console.log(err);
+    }
+    setDeletingCommentId(null);
+  };
+
   const deletePhoto = async (photoId) => {
     setDeletingPhotoId(photoId);
     try {
@@ -342,10 +355,10 @@ function TrailDetail() {
               <div style={{ fontSize: '13px', fontWeight: '500', marginBottom: '8px', color: '#1A1A1A' }}>
                 Previous comments ({trail.comments.length}):
               </div>
-              {trail.comments.slice().reverse().map((c, i) => (
-                <div key={i} style={{ padding: '8px 0', borderBottom: '1px solid #F0F0F0' }}>
+              {trail.comments.slice().reverse().map((c) => (
+                <div key={c._id} style={{ padding: '8px 0', borderBottom: '1px solid #F0F0F0' }}>
                   <div style={{ fontSize: '13px', color: '#1A1A1A' }}>{c.text}</div>
-                  <div style={{ color: '#999', fontSize: '11px', marginTop: '3px', display: 'flex', gap: '8px' }}>
+                  <div style={{ color: '#999', fontSize: '11px', marginTop: '3px', display: 'flex', gap: '8px', alignItems: 'center' }}>
                     <span style={{ fontWeight: '500', color: '#639922' }}>👤 {c.author}</span>
                     <span>{new Date(c.date).toLocaleDateString()}</span>
                     <span style={{
@@ -355,6 +368,15 @@ function TrailDetail() {
                     }}>
                       {c.nlpRisk?.replace('_', ' ')}
                     </span>
+                    {user && c.commenterId === user.id && (
+                      <button
+                        style={styles.deleteCommentBtn}
+                        onClick={() => deleteComment(c._id)}
+                        disabled={deletingCommentId === c._id}
+                      >
+                        {deletingCommentId === c._id ? 'Removing...' : 'Delete'}
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
@@ -441,6 +463,8 @@ const styles = {
   signInBtn: { background: '#27500A', color: '#fff', border: 'none', borderRadius: '6px',
                padding: '6px 14px', fontSize: '12px', cursor: 'pointer' },
   commentingAs: { fontSize: '12px', color: '#639922', marginBottom: '8px', fontWeight: '500' },
+  deleteCommentBtn: { marginLeft: 'auto', background: 'none', border: 'none', color: '#A32D2D',
+                      fontSize: '11px', cursor: 'pointer', textDecoration: 'underline', padding: 0 },
   followBtn: { width: '100%', padding: '14px', background: '#639922', border: 'none',
                borderRadius: '12px', color: '#fff', fontSize: '15px', fontWeight: '600',
                cursor: 'pointer', marginTop: '4px', marginBottom: '8px' },
